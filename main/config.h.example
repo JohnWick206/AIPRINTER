@@ -1,0 +1,30 @@
+// 本地凭据模板 —— 复制成 config.h 后填入你自己的值
+//
+//   cp main/config.h.example main/config.h
+//
+// config.h 已被 .gitignore 排除，不会被提交。
+
+#pragma once
+
+#define WIFI_SSID  "your-wifi-ssid"
+#define WIFI_PASS  "your-wifi-password"
+
+// 硅基流动 API Key，形如 sk-xxxxxxxx
+#define API_KEY    "sk-your-key-here"
+
+#define API_URL    "https://api.siliconflow.cn/v1/images/generations"
+#define MODEL_NAME "Kwai-Kolors/Kolors"
+
+// 生成尺寸：竖构图 3:4
+#define IMG_SIZE   "480x640"
+#define IMG_STEPS  20
+
+// 拼在用户提示词后面的固定风格，控制构图和线条，便于后续二值化
+#define IMG_STYLE  "，竖构图3比4，主体居中并占画面高度七成，四周充足留白，" \
+                   "卡通贴纸风格，粗黑轮廓线，纯色平涂，浅色背景，不要文字，不要边框，不要水印"
+
+#define DEFAULT_PROMPT "a cute orange cat, front view, sitting"
+
+// 服务端限额：图像模型 IPM = 2（每分钟 2 张，按账户算，换 key 无效），IPD = 400（每天）。
+// 60 s / 2 张 = 每张至少间隔 30 s，这里按 30 s 硬限速，撞 429 时才不会白等。
+#define MIN_INTERVAL_S  30

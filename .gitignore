@@ -1,0 +1,16 @@
+# ESP-IDF 构建产物
+build/
+sdkconfig.old
+
+# 本地凭据（WiFi 密码 + API Key），绝不入库
+main/config.h
+
+# 开发中的预览图/日志
+*.log
+*.bmp
+pins_*.png
+font_preview.png
+
+# 编辑器
+.vscode/
+.idea/
