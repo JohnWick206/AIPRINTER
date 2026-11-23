@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIPRINTER · 竖屏四幕原型</title>
+<style>
+  :root{
+    --ink:#e9edf2; --dim:#7e8a97; --dim2:#5a6572;
+    --line:#1f262f; --accent:#4f8dff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:26px 18px 44px;
+    background:#080a0d; color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+  }
+  header{width:min(92vw,430px); display:flex; align-items:flex-end; justify-content:space-between}
+  h1{font-size:16px; font-weight:500; margin:0; letter-spacing:.01em}
+  header p{margin:4px 0 0; font-size:12px; color:var(--dim)}
+  .tag{font-size:11px; color:var(--dim2); font-variant-numeric:tabular-nums}
+
+  .device{
+    width:min(92vw,430px); padding:16px 16px 0;
+    background:linear-gradient(180deg,#151b22,#0b0f14);
+    border:1px solid #232b35; border-radius:26px;
+    box-shadow:0 40px 90px -34px #000, inset 0 1px 0 #2a3542;
+  }
+  .stage{
+    position:relative; aspect-ratio:240/320; border-radius:6px; overflow:hidden;
+    background:#05070a; cursor:pointer; user-select:none; touch-action:none;
+    box-shadow:inset 0 0 0 1px #1a2129;
+  }
+  .stage canvas{display:block; width:100%; height:100%}
+
+  .deck{display:flex; align-items:flex-start; justify-content:center; gap:40px; padding:16px 0 18px}
+  .keywrap{display:flex; flex-direction:column; align-items:center; gap:7px}
+  .lbl{font-size:11px; color:var(--dim2); letter-spacing:.06em}
+  .key{
+    border:1px solid #2b3541; background:#171d25; color:#c7d2de;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; letter-spacing:.04em; transition:transform .08s, background .12s, border-color .12s, box-shadow .12s;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .key:active,.key.on{
+    background:#1d2b45; border-color:#4f8dff; color:#dbe9ff;
+    box-shadow:0 0 0 4px rgba(79,141,255,.14); transform:translateY(1px) scale(.985);
+  }
+  .mic{width:64px; height:64px; border-radius:50%}
+  .mic .dot{width:14px; height:14px; border-radius:50%; background:#4f8dff; opacity:.9}
+  .mic.on .dot{background:#ff5a52; animation:pulse .9s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  .legend{font-size:11px; color:var(--dim2); text-align:center; padding:0 0 16px; letter-spacing:.03em}
+
+  .hint{width:min(92vw,430px); font-size:12px; color:var(--dim); line-height:1.7; margin:0}
+  .hint b{color:#b9c6d4; font-weight:500}
+
+  .chips{width:min(92vw,430px); display:grid; gap:8px; grid-template-columns:repeat(2,minmax(0,1fr))}
+  .chip{border:1px solid var(--line); border-radius:10px; padding:10px 11px; background:#0c1015}
+  .chip .n{font-size:11px; color:var(--dim2); letter-spacing:.06em}
+  .chip .t{font-size:12px; margin-top:3px}
+  .chip .s{font-size:10.5px; color:var(--dim); margin-top:4px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+  .ctl{display:flex; gap:10px}
+  .btn{
+    border:1px solid #2b3541; background:#11161c; color:#c7d2de; font-size:12px;
+    padding:8px 16px; border-radius:99px; cursor:pointer; font-family:inherit;
+    transition:background .12s, border-color .12s;
+  }
+  .btn:hover{background:#18202a; border-color:#3a4757}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>AIPRINTER · 竖屏四幕原型</h1>
+    <p>240×320 · 3:4 竖屏 · 出图满屏铺满</p>
+  </div>
+  <div class="tag">v0.3</div>
+</header>
+
+<div class="device">
+  <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+  <div class="deck">
+    <div class="keywrap">
+      <div class="key mic" id="keyMic"><div class="dot"></div></div>
+      <div class="lbl">唯一按键</div>
+    </div>
+  </div>
+  <div class="legend">按住 = 说话 · 松开 = 生成 · 轻触 = 打印 · 长按 = 不要这张</div>
+</div>
+
+<p class="hint">
+  <b>鼠标就是手</b>：按住不放 = 按下那个唯一的键，松手才开始生成；出图后<b>轻触 = 打印</b>，
+  按住超过 0.7 秒 = 不要这张；生成中按住 1.2 秒 = 取消。图片按 3:4 满屏铺，不裁边。
+</p>
+
+<div class="chips">
+  <div class="chip"><div class="n">幕 ① 录音</div><div class="t">波形 + 计时</div><div class="s">micro / voice-pill</div></div>
+  <div class="chip"><div class="n">幕 ② 等待</div><div class="t">格点 + 数字滚动</div><div class="s">micro / lattice-loader</div></div>
+  <div class="chip"><div class="n">幕 ③ 转场</div><div class="t">半调网点揭示</div><div class="s">halftone-reveal</div></div>
+  <div class="chip"><div class="n">幕 ④ 打印</div><div class="t">扫描头逐行曝光</div><div class="s">scanner（改造）</div></div>
+</div>
+
+<div class="ctl">
+  <button class="btn" id="btnAuto">自动演示</button>
+  <button class="btn" id="btnReset">重新开始</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var W = 240, H = 320;
+  var FONT = '-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+
+  function fit(){
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  // ───── 小工具 ─────
+  function rr(x, y, w, h, r){
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function tx(s, x, y, o){
+    o = o || {};
+    ctx.save();
+    ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
+    ctx.font = (o.weight || 400) + ' ' + (o.size || 11) + 'px ' + FONT;
+    ctx.fillStyle = o.color || '#e9edf2';
+    ctx.textAlign = o.align || 'center';
+    ctx.textBaseline = 'middle';
+    try { ctx.letterSpacing = (o.sp || 0) + 'px'; } catch (e) {}
+    ctx.fillText(s, x, y);
+    ctx.restore();
+  }
+  function clamp(v, a, b){ return v < a ? a : v > b ? b : v; }
+  function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
+  function easeInOut(t){ return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2; }
+  function mix(c1, c2, t){ return 'rgb(' + Math.round(c1[0]+(c2[0]-c1[0])*t) + ',' + Math.round(c1[1]+(c2[1]-c1[1])*t) + ',' + Math.round(c1[2]+(c2[2]-c1[2])*t) + ')'; }
+
+  // ───── 生成图：480×640 竖构图，正好等于 240×320 的 2 倍，铺满不裁 ─────
+  var PW = 240, PH = 320;
+  var photo = document.createElement('canvas');
+  photo.width = PW; photo.height = PH;
+  (function drawCat(){
+    var g = photo.getContext('2d');
+    g.fillStyle = '#f3f2ed'; g.fillRect(0, 0, PW, PH);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    function shape(fill, stroke, lw){ g.fillStyle = fill; g.fill(); if (stroke){ g.strokeStyle = stroke; g.lineWidth = lw || 7; g.stroke(); } }
+
+    // 以 120 为中心竖排，一点留白
+    g.beginPath(); g.ellipse(120, 302, 62, 7, 0, 0, 7); shape('#dedcd3', null);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 20;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 8;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+
+    g.beginPath();
+    g.moveTo(120, 200);
+    g.bezierCurveTo(160, 200, 180, 236, 180, 272);
+    g.bezierCurveTo(180, 294, 158, 303, 120, 303);
+    g.bezierCurveTo(82, 303, 60, 294, 60, 272);
+    g.bezierCurveTo(60, 236, 80, 200, 120, 200);
+    g.closePath();
+    shape('#ffffff', '#151515', 7);
+
+    g.beginPath(); g.moveTo(74, 96); g.lineTo(66, 46); g.lineTo(110, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(166, 96); g.lineTo(174, 46); g.lineTo(130, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(81, 89); g.lineTo(75, 59); g.lineTo(101, 74); g.closePath(); shape('#e9e7e0', null);
+    g.beginPath(); g.moveTo(159, 89); g.lineTo(165, 59); g.lineTo(139, 74); g.closePath(); shape('#e9e7e0', null);
+
+    g.beginPath(); g.arc(120, 140, 60, 0, 7); shape('#ffffff', '#151515', 7);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 5;
+    [[105, 95, 103, 106], [120, 90, 120, 103], [135, 95, 137, 106]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.ellipse(99, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(141, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(96, 136, 2.4, 0, 7); g.fill();
+    g.beginPath(); g.arc(138, 136, 2.4, 0, 7); g.fill();
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.moveTo(120, 156); g.lineTo(112, 165); g.lineTo(128, 165); g.closePath(); g.fill();
+    g.strokeStyle = '#151515'; g.lineWidth = 4.4;
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(111, 175, 102, 169); g.stroke();
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(129, 175, 138, 169); g.stroke();
+
+    g.lineWidth = 3.4;
+    [[96, 162, 62, 154], [96, 169, 58, 169], [98, 176, 64, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+    [[144, 162, 178, 154], [144, 169, 182, 169], [142, 176, 176, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+  })();
+
+  // ───── 版面：整屏就是图片，文字都压在图上或屏边 ─────
+  var FOOT_Y = 288;
+
+  // ───── 幕 ① 待机 / 录音 ─────
+  var BARS = 24;
+  function drawIdle(el){
+    var pressed = pressing && holdMode === 'talk';
+    tx('AIPRINTER', 18, 18, {size:10, color:'#5a6674', align:'left', sp:1.2});
+    tx('就绪', W - 18, 18, {size:10, color:'#5a6674', align:'right'});
+
+    var cy = 168;
+    var br = 34 + 3 * Math.sin(el * 1.9) - (pressed ? 5 : 0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(79,141,255,' + (pressed ? .38 : .16) + ')';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(W/2, cy, br + 14, 0, 7); ctx.stroke();
+    ctx.strokeStyle = 'rgba(79,141,255,' + (pressed ? .58 : .3) + ')';
+    ctx.beginPath(); ctx.arc(W/2, cy, br + 6, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(79,141,255,' + (pressed ? .16 : .08) + ')';
+    ctx.beginPath(); ctx.arc(W/2, cy, br, 0, 7); ctx.fill();
+    // 话筒
+    ctx.fillStyle = '#9dbfff';
+    rr(W/2 - 4.5, cy - 14, 9, 18, 4.5); ctx.fill();
+    ctx.strokeStyle = '#9dbfff'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(W/2, cy - 3, 10, 0.18*Math.PI, 0.82*Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2, cy + 7); ctx.lineTo(W/2, cy + 11); ctx.stroke();
+    ctx.restore();
+
+    tx('按住说话', W/2, 240, {size:20, weight:500, color:'#f2f6fb'});
+    tx('松手后为你画一张', W/2, 264, {size:11, color:'#6c7885'});
+  }
+
+  function drawRec(el){
+    var blink = 0.45 + 0.55 * Math.abs(Math.sin(el * 4.4));
+    ctx.save(); ctx.globalAlpha = blink; ctx.fillStyle = '#ff5a52';
+    ctx.beginPath(); ctx.arc(20, 20, 3.4, 0, 7); ctx.fill(); ctx.restore();
+    tx('正在听', 30, 20, {size:11, weight:500, align:'left'});
+    var s = Math.floor(el);
+    tx('00:' + (s < 10 ? '0' : '') + s, W - 18, 20, {size:11, color:'#b9c6d4', align:'right'});
+
+    var span = 156, bw = 3, gap = (span - BARS * bw) / (BARS - 1);
+    var x0 = (W - span) / 2, cy = 160;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x0, cy); ctx.lineTo(x0 + span, cy); ctx.stroke();
+    ctx.restore();
+    for (var i = 0; i < BARS; i++){
+      var ph = i * 0.62;
+      var env = 0.3 + 0.7 * Math.abs(Math.sin(i * 0.17 + 0.7));
+      var a1 = Math.abs(Math.sin(el * 6.2 + ph * 1.7));
+      var a2 = Math.abs(Math.sin(el * 2.3 + ph * 0.5));
+      var amp = (0.18 + 0.82 * a1) * (0.5 + 0.5 * a2) * env;
+      var hh = 3 + amp * 84;
+      var x = x0 + i * (bw + gap);
+      ctx.fillStyle = mix([70,120,200], [165,200,255], amp);
+      rr(x, cy - hh / 2, bw, hh, bw / 2); ctx.fill();
+    }
+    tx('松手即开始生成', W/2, 288, {size:10, color:'#6c7885'});
+  }
+
+  // ───── 幕 ② 等待 ─────
+  var COLS = 12, ROWS = 16;
+  function drawLattice(el, alpha){
+    var sx = W / COLS, sy = H / ROWS;
+    for (var y = 0; y < ROWS; y++){
+      for (var x = 0; x < COLS; x++){
+        var d = x * 0.7 + y * 0.95;
+        var b = 0.5 + 0.5 * Math.sin(el * 2.1 - d * 0.5);
+        b = b * b;
+        ctx.fillStyle = 'rgba(122,167,255,' + (0.05 + 0.55 * b) * alpha + ')';
+        ctx.beginPath();
+        ctx.arc(sx * (x + .5), sy * (y + .5), 1.1 + 1.6 * b, 0, 7);
+        ctx.fill();
+      }
+    }
+  }
+
+  var LOAD_DUR = 9.4, REVEAL_DUR = 1.15, PRINT_DUR = 6.4;
+  var dispPct = 0, shownNum = 0;
+
+  function loadProgress(el){
+    var k = 1.75;
+    var raw = (1 - Math.exp(-k * el)) / (1 - Math.exp(-k * LOAD_DUR));
+    var p = 0.94 * raw;
+    var tail = clamp((el - (LOAD_DUR - 0.55)) / 0.55, 0, 1);
+    p += (1 - p) * easeInOut(tail);
+    return clamp(p, 0, 1);
+  }
+  function loadStatus(p){
+    if (p < 0.26) return '正在理解你的描述';
+    if (p < 0.72) return '正在绘制画面';
+    if (p < 0.995) return '最后润色';
+    return '画面已就绪';
+  }
+
+  function drawLoad(el){
+    var p = loadProgress(el);
+    dispPct = Math.round(p * 100);
+    shownNum += (dispPct - shownNum) * 0.16;
+
+    drawLattice(el, 1);
+    // 中心压暗，让数字从点阵里跳出来
+    var sc = ctx.createRadialGradient(W/2, 146, 6, W/2, 146, 132);
+    sc.addColorStop(0, 'rgba(6,9,13,.9)');
+    sc.addColorStop(1, 'rgba(6,9,13,0)');
+    ctx.fillStyle = sc;
+    ctx.fillRect(0, 0, W, H);
+    tx('AIPRINTER', 18, 18, {size:10, color:'#3f4a57', align:'left', sp:1.2});
+
+    var n = Math.round(shownNum);
+    var ns = String(n);
+    ctx.save();
+    ctx.font = '500 52px ' + FONT;
+    var nw = ctx.measureText(ns).width;
+    ctx.font = '500 15px ' + FONT;
+    var pw2 = ctx.measureText('%').width;
+    ctx.restore();
+    var gap = 2;
+    var nx = W / 2 - (nw + gap + pw2) / 2;
+    tx(ns, nx, 146, {size:52, weight:500, color:'#f4f8ff', align:'left'});
+    tx('%', nx + nw + gap, 130, {size:15, weight:500, color:'#7d9cc9', align:'left'});
+    tx(loadStatus(p), W/2, 190, {size:11, color:'#7d8b9a'});
+
+    var bw2 = 156, bx = (W - bw2) / 2, by = 230;
+    ctx.fillStyle = 'rgba(255,255,255,.08)';
+    rr(bx, by, bw2, 2, 1); ctx.fill();
+    ctx.save();
+    ctx.fillStyle = '#4f8dff';
+    rr(bx, by, Math.max(2, bw2 * p), 2, 1); ctx.fill();
+    ctx.globalAlpha = .5; ctx.fillStyle = '#bcd7ff';
+    ctx.beginPath(); ctx.arc(bx + bw2 * p, by + 1, 3, 0, 7); ctx.fill();
+    ctx.restore();
+
+    if (holdMode === 'cancel'){
+      tx('继续按住即取消', W/2, 254, {size:9, color:'#c3ccd6'});
+      ctx.fillStyle = 'rgba(255,255,255,.12)';
+      rr(W/2 - 28, 264, 56, 2, 1); ctx.fill();
+      ctx.fillStyle = '#ff8b83';
+      rr(W/2 - 28, 264, Math.max(1, 56 * holdP), 2, 1); ctx.fill();
+    } else {
+      tx('长按可取消', W/2, 258, {size:9, color:'#424e5c'});
+    }
+  }
+
+  // ───── 幕 ③ 半调网点转场（整屏） ─────
+  var BAYER = [
+     0,32, 8,40, 2,34,10,42,
+    48,16,56,24,50,18,58,26,
+    12,44, 4,36,14,46, 6,38,
+    60,28,52,20,62,30,54,22,
+     3,35,11,43, 1,33, 9,41,
+    51,19,59,27,49,17,57,25,
+    15,47, 7,39,13,45, 5,37,
+    63,31,55,23,61,29,53,21
+  ];
+
+  function coverRect(){
+    // 等比铺满：图比屏更宽就裁左右，更高就裁上下，永不拉伸
+    var s = Math.max(W / PW, H / PH);
+    var dw = PW * s, dh = PH * s;
+    return { x: (W - dw) / 2, y: (H - dh) / 2, w: dw, h: dh, s: s };
+  }
+
+  function drawPhotoFull(){
+    var r = coverRect();
+    ctx.drawImage(photo, r.x, r.y, r.w, r.h);
+  }
+
+  function drawReveal(el){
+    var p = easeOut(clamp(el / REVEAL_DUR, 0, 1));
+    drawLattice(el, 1 - p);
+    // 底片先微微亮起来，未揭示的格子就不是黑洞，而是暗影
+    ctx.save();
+    ctx.globalAlpha = 0.32 * p;
+    drawPhotoFull();
+    ctx.restore();
+    tx('AIPRINTER', 18, 18, {size:10, color:'#3f4a57', align:'left', sp:1.2, alpha:1 - p});
+
+    var bs = 8;
+    var cols = Math.ceil(W / bs), rows = Math.ceil(H / bs);
+    var cr = coverRect();
+    for (var by = 0; by < rows; by++){
+      for (var bx = 0; bx < cols; bx++){
+        var thr = (BAYER[(by & 7) * 8 + (bx & 7)] + 0.5) / 64;
+        if (p * 1.06 > thr){
+          var dx = bx * bs, dy = by * bs;
+          var w = Math.min(bs, W - bx * bs), h = Math.min(bs, H - by * bs);
+          ctx.drawImage(photo,
+            (dx - cr.x) / cr.s, (dy - cr.y) / cr.s, w / cr.s, h / cr.s,
+            dx, dy, w, h);
+        }
+      }
+    }
+  }
+
+  // ───── 预览 / 打印：图片整屏，文字压在图上 ─────
+  function scrim(){
+    var g = ctx.createLinearGradient(0, H - 76, 0, H);
+    g.addColorStop(0, 'rgba(4,6,9,0)');
+    g.addColorStop(1, 'rgba(4,6,9,.72)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H - 76, W, 76);
+  }
+
+  function pill(label, color, y){
+    ctx.save();
+    ctx.font = '500 11px ' + FONT;
+    var w = ctx.measureText(label).width + 26;
+    ctx.fillStyle = 'rgba(8,11,15,.82)';
+    rr(W/2 - w/2, y - 10, w, 20, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = .8; ctx.stroke();
+    ctx.restore();
+    tx(label, W/2, y, {size:11, weight:500, color: color || '#cfdcec'});
+  }
+
+  function drawPreview(el){
+    drawPhotoFull();
+    scrim();
+    if (holdMode === 'discard'){
+      var over = holdP >= 1;
+      pill(over ? '松开 = 不要这张' : '继续按住 = 不要这张', over ? '#ff9d95' : '#ffcfca', FOOT_Y);
+      ctx.fillStyle = 'rgba(255,255,255,.14)';
+      rr(W/2 - 42, FOOT_Y + 13, 84, 2, 1); ctx.fill();
+      ctx.fillStyle = '#ff8b83';
+      rr(W/2 - 42, FOOT_Y + 13, Math.max(1, 84 * holdP), 2, 1); ctx.fill();
+    } else {
+      pill('轻触打印 · 长按重来', '#dbe9ff', FOOT_Y);
+    }
+  }
+
+  function drawPrint(el){
+    var p = clamp(el / PRINT_DUR, 0, 1);
+    var y = H * p;
+
+    ctx.save();
+    ctx.globalAlpha = 0.09;
+    drawPhotoFull();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, Math.max(0, y)); ctx.clip();
+    drawPhotoFull();
+    ctx.globalAlpha = 0.03; ctx.fillStyle = '#000';
+    for (var yy = 0; yy < y; yy += 3) ctx.fillRect(0, yy, W, 1);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    ctx.save();
+    var hg = ctx.createLinearGradient(0, y - 16, 0, y + 2);
+    hg.addColorStop(0, 'rgba(120,175,255,0)');
+    hg.addColorStop(1, 'rgba(150,200,255,.32)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, y - 16, W, 18);
+    ctx.fillStyle = '#d8e8ff';
+    ctx.fillRect(0, y - 1, W, 1.6);
+    ctx.fillStyle = '#7fb0ff';
+    ctx.fillRect(2, y - 3, 4, 6);
+    ctx.fillRect(W - 6, y - 3, 4, 6);
+    ctx.restore();
+
+    scrim();
+    tx('打印中 ' + Math.round(p * 100) + '%', W/2, FOOT_Y, {size:11, weight:500, color:'#a9c4e6'});
+  }
+
+  function drawDone(el){
+    drawPhotoFull();
+    scrim();
+    pill('打印完成', '#a9e0c0', FOOT_Y);
+    tx('按住再说一张', W/2, 308, {size:9, color:'#8b96a3'});
+  }
+
+  // ───── 状态机 ─────
+  var ST = 'idle', t0 = performance.now(), toast = null, autoMode = false, keyOn = false;
+  var micKey = document.getElementById('keyMic');
+
+  function go(s){ ST = s; t0 = performance.now(); }
+  function elNow(){ return (performance.now() - t0) / 1000; }
+  function setKeyOn(v){ keyOn = v; micKey.classList.toggle('on', v); }
+
+  // 单键：一个物理键承担 录音 / 打印 / 取消 / 弃图，全靠按下时长区分
+  var PRESS_MS = 250;
+  var DISCARD_MS = 700;
+  var CANCEL_MS = 1200;
+  var pressing = false, pressT = 0, holdP = 0, holdMode = null;
+
+  function beginPress(){
+    if (pressing) return;
+    pressing = true;
+    pressT = performance.now();
+    holdP = 0;
+    holdMode = null;
+    if (ST === 'preview') holdMode = 'discard';
+    else if (ST === 'load') holdMode = 'cancel';
+    else if (ST === 'idle' || ST === 'done') holdMode = 'talk';
+    if (holdMode) setKeyOn(true);
+  }
+
+  function tickPress(){
+    if (!pressing) return;
+    var held = performance.now() - pressT;
+    if (holdMode === 'talk'){
+      if (held >= PRESS_MS && (ST === 'idle' || ST === 'done')){
+        autoMode = false;
+        setKeyOn(true);
+        go('rec');
+        holdMode = 'rec';
+      }
+    } else if (holdMode === 'cancel'){
+      holdP = clamp(held / CANCEL_MS, 0, 1);
+      if (held >= CANCEL_MS && ST === 'load'){
+        pressing = false; holdMode = null; holdP = 0; setKeyOn(false);
+        toast = { txt: '已取消', t: performance.now() };
+        go('idle');
+      }
+    } else if (holdMode === 'discard'){
+      holdP = clamp(held / DISCARD_MS, 0, 1);
+    }
+  }
+
+  function endPress(){
+    if (!pressing) return;
+    var held = performance.now() - pressT;
+    var mode = holdMode;
+    pressing = false; holdMode = null; holdP = 0;
+    setKeyOn(false);
+
+    if (mode === 'talk'){
+      if (held < PRESS_MS){
+        toast = { txt: ST === 'done' ? '按住不放录下一张' : '按住不放才能说话', t: performance.now() };
+      }
+      return;
+    }
+    if (mode === 'rec'){ finishRec(); return; }
+    if (mode === 'discard'){
+      if (held >= DISCARD_MS){
+        toast = { txt: '这张不要了', t: performance.now() };
+        go('idle');
+      } else {
+        startPrint();
+      }
+    }
+  }
+
+  function finishRec(){
+    if (ST !== 'rec') return;
+    if (elNow() < 0.5){
+      toast = { txt: '太短了，按住多说一会儿', t: performance.now() };
+      go('idle');
+      return;
+    }
+    dispPct = 0; shownNum = 0;
+    go('load');
+  }
+
+  function startPrint(){
+    if (ST !== 'preview') return;
+    go('print');
+  }
+
+  function drawToast(){
+    if (!toast) return;
+    var age = (performance.now() - toast.t) / 1000;
+    if (age > 1.8){ toast = null; return; }
+    var a = age < .25 ? age / .25 : age > 1.35 ? 1 - (age - 1.35) / .45 : 1;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.font = '11px ' + FONT;
+    var w = Math.min(W - 24, ctx.measureText(toast.txt).width + 26);
+    ctx.fillStyle = 'rgba(20,25,32,.94)';
+    rr(W/2 - w/2, 246, w, 26, 13); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,120,110,.35)'; ctx.lineWidth = .8; ctx.stroke();
+    ctx.restore();
+    tx(toast.txt, W/2, 259, {size:11, color:'#ffb4ae', alpha: a});
+  }
+
+  function frame(){
+    tickPress();
+    var el = elNow();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0d11';
+    ctx.fillRect(0, 0, W, H);
+
+    if (ST === 'idle') drawIdle(el);
+    else if (ST === 'rec') drawRec(el);
+    else if (ST === 'load'){ if (el >= LOAD_DUR){ go('reveal'); } drawLoad(el); }
+    else if (ST === 'reveal'){ if (el >= REVEAL_DUR){ go('preview'); } drawReveal(el); }
+    else if (ST === 'preview') drawPreview(el);
+    else if (ST === 'print'){ if (el >= PRINT_DUR){ go('done'); } drawPrint(el); }
+    else if (ST === 'done'){
+      drawDone(el);
+      if (autoMode && el > 3.2){ autoMode = false; go('idle'); }
+    }
+    drawToast();
+    requestAnimationFrame(frame);
+  }
+
+  // ───── 输入：鼠标即手，按住的时长决定这一下是什么意思 ─────
+  var stage = document.getElementById('stage');
+
+  stage.addEventListener('pointerdown', function(e){
+    if (e.button) return;
+    e.preventDefault();
+    beginPress();
+  });
+  micKey.addEventListener('pointerdown', function(e){
+    if (e.button) return;
+    e.preventDefault();
+    e.stopPropagation();
+    beginPress();
+  });
+  window.addEventListener('pointerup', function(){ endPress(); });
+  window.addEventListener('pointercancel', function(){ endPress(); });
+
+  document.getElementById('btnReset').addEventListener('click', function(){
+    pressing = false; holdMode = null; holdP = 0;
+    autoMode = false; setKeyOn(false); dispPct = 0; shownNum = 0; toast = null; go('idle');
+  });
+
+  var autoTimer = null;
+  document.getElementById('btnAuto').addEventListener('click', function(){
+    autoMode = true; setKeyOn(false); dispPct = 0; shownNum = 0; go('idle');
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function(){
+      if (!autoMode) return;
+      beginPress();
+      autoTimer = setTimeout(function(){ if (pressing) endPress(); }, 2600);
+    }, 700);
+  });
+
+  // 调试：地址栏加 #load / #print 等可直接跳到某一幕，便于截图评审
+  (function(){
+    var h = (location.hash || '').replace('#', '');
+    if (h === 'hold'){
+      go('preview'); t0 = performance.now();
+      pressing = true; holdMode = 'discard'; holdP = .62;
+      pressT = performance.now() - DISCARD_MS * .62;
+      return;
+    }
+    if (h === 'cancel'){
+      go('load'); t0 = performance.now() - 4600;
+      pressing = true; holdMode = 'cancel'; holdP = .55;
+      pressT = performance.now() - CANCEL_MS * .55;
+      return;
+    }
+    if (['rec', 'load', 'reveal', 'preview', 'print', 'done'].indexOf(h) < 0) return;
+    var skip = { rec: 1.2, load: 4.6, reveal: 0.45, preview: 0, print: 3.2, done: 0 }[h] || 0;
+    go(h);
+    t0 = performance.now() - skip * 1000;
+    if (h === 'rec') setKeyOn(true);
+  })();
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

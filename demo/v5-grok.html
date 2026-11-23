@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIPRINTER · 角色版</title>
+<style>
+  :root{
+    --bg:#08090b; --surface:#111318; --surface-2:#171a20;
+    --txt:#e8ebef; --txt-2:#8b939e; --txt-3:#5b636e;
+    --ease-out:cubic-bezier(.23,1,.32,1);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:30px 18px 44px;
+    background:var(--bg); color:var(--txt);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{width:min(92vw,400px); display:flex; align-items:flex-end; justify-content:space-between}
+  h1{font-size:14px; font-weight:500; margin:0; letter-spacing:.02em}
+  header p{margin:5px 0 0; font-size:11.5px; color:var(--txt-2); line-height:1.5}
+  .tag{font-size:10.5px; color:var(--txt-3); font-variant-numeric:tabular-nums}
+
+  .device{
+    width:min(92vw,400px); padding:13px 13px 0;
+    background:linear-gradient(180deg,#15181d,#0c0e12);
+    border-radius:26px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 0 0 .5px rgba(255,255,255,.05),0 40px 80px -40px rgba(0,0,0,.9);
+  }
+  /* 外层只负责占位；内层固定 240×320，整体 scale。
+     这样页面里每一个 px 都等于 TFT 上的一个像素，移植时数值可直接照抄。 */
+  .screenbox{
+    position:relative; width:100%; aspect-ratio:240/320;
+    border-radius:4px; overflow:hidden;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.07);
+  }
+  .stage{
+    position:absolute; top:0; left:0; width:240px; height:320px;
+    transform-origin:0 0; background:#0b0d10;
+    cursor:pointer; user-select:none; touch-action:none;
+  }
+  #photo{
+    position:absolute; inset:0; width:100%; height:100%; display:block;
+    opacity:0; transition:opacity .42s var(--ease-out);
+  }
+  .stage[data-act="ready"] #photo,
+  .stage[data-act="print"] #photo,
+  .stage[data-act="done"] #photo{opacity:1}
+
+  /* 角色舞台：换幕时用 transform 挪位，不触发重排 */
+  .botzone{position:absolute; inset:0; pointer-events:none}
+  .botwrap{
+    position:absolute; left:50%; top:61px; margin-left:-80px;
+    width:160px; height:160px;
+    /* 团子的视觉中心在 wrap 的 44% 处：缩放绕这一点，尺寸变了位置不跑 */
+    transform-origin:50% 44%;
+    transition:transform .34s var(--ease-out), opacity .26s var(--ease-out);
+    will-change:transform,opacity;
+  }
+  #bot{
+    width:100%; height:100%; display:block; overflow:visible;
+    --sand-bg-base:#0b0d10;   /* 眼睛是挖洞，露出的就是屏幕底色 */
+  }
+  .stage[data-act="rec"] .botwrap{transform:translateY(-48px) scale(.78)}
+  .stage[data-act="load"] .botwrap{transform:translateY(-2px) scale(.99)}
+  .stage[data-act="ready"] .botwrap,
+  .stage[data-act="print"] .botwrap,
+  .stage[data-act="done"] .botwrap{transform:translateY(-10px) scale(.74); opacity:0}
+
+  .hud{position:absolute; inset:0; pointer-events:none; font-variant-numeric:tabular-nums}
+
+  #dict{
+    position:absolute; left:20px; right:20px; top:176px;
+    font-size:13.5px; line-height:21px; text-align:center; color:#eef2f7;
+    letter-spacing:.01em; opacity:0; transition:opacity .2s var(--ease-out);
+  }
+  .stage[data-act="rec"] #dict{opacity:1}
+  #dict .caret{
+    display:inline-block; width:1.5px; height:13px; margin-left:2px;
+    background:#7aa7ff; vertical-align:-2px; animation:blink 1s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+
+  #hint{
+    position:absolute; left:0; right:0; bottom:42px; text-align:center;
+    font-size:12px; color:#7c8794; letter-spacing:.02em;
+    transition:color .2s var(--ease-out), opacity .2s var(--ease-out);
+  }
+  .stage[data-act="idle"] #hint{color:#98a3b0}
+  /* 出图/打印后，文字压在照片上，必须有底 */
+  .stage[data-act="ready"] #hint,
+  .stage[data-act="print"] #hint,
+  .stage[data-act="done"] #hint{
+    width:fit-content; margin:0 auto; left:0; right:0;
+    background:rgba(7,9,12,.74); color:#e2e9f2;
+    padding:6px 13px; border-radius:99px; font-size:11px;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.10);
+  }
+  .stage[data-act="deny"] #hint{color:#ff8b83}
+
+  #ring{
+    position:absolute; left:50%; top:130px;
+    width:204px; height:204px; margin:-102px 0 0 -102px;
+    border-radius:50%;
+    /* 颜色取自引擎的 PALETTE：绿 / 蓝 / 紫 / 粉 */
+    background:conic-gradient(from 0deg,
+      rgba(0,0,0,0) 0deg 234deg,
+      rgba(63,190,134,.10) 246deg,
+      #3fbe86 268deg,
+      #5b95f0 292deg,
+      #9a72ee 312deg,
+      #f9705c 332deg,
+      rgba(249,112,92,.20) 344deg,
+      rgba(0,0,0,0) 352deg);
+    -webkit-mask:radial-gradient(circle, transparent 0 45%, #000 46.4% 49.6%, transparent 51%);
+    mask:radial-gradient(circle, transparent 0 45%, #000 46.4% 49.6%, transparent 51%);
+    opacity:0; transition:opacity .24s var(--ease-out);
+    animation:spinring 1.7s linear infinite;
+  }
+  .stage[data-act="load"] #ring{opacity:1}
+  @keyframes spinring{to{transform:rotate(360deg)}}
+  body.snap #ring{animation:none; transform:rotate(24deg)}
+
+  #timer{
+    position:absolute; right:18px; top:16px; font-size:10px; color:#5f6b78;
+    font-family:ui-monospace,Menlo,Consolas,monospace; opacity:0;
+    transition:opacity .2s var(--ease-out);
+  }
+  .stage[data-act="rec"] #timer{opacity:1}
+
+  #brand{
+    position:absolute; left:18px; top:16px; font-size:9.5px; color:#3e4854;
+    letter-spacing:.16em; opacity:0; transition:opacity .2s var(--ease-out);
+  }
+  .stage[data-act="idle"] #brand,
+  .stage[data-act="done"] #brand{opacity:1}
+
+  /* 长按弃图的细进度线 */
+  #prog{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:26px;
+    width:96px; height:1.5px; background:rgba(255,255,255,.10);
+    border-radius:1px; overflow:hidden; opacity:0; transition:opacity .15s;
+  }
+  .stage[data-act="hold"] #prog{opacity:1}
+  #prog i{display:block; height:100%; width:0; background:#ff8b83}
+
+  .deck{display:flex; justify-content:center; padding:15px 0 13px}
+  .keywrap{display:flex; flex-direction:column; align-items:center; gap:7px}
+  .lbl{font-size:9.5px; color:var(--txt-3); letter-spacing:.16em}
+  .key{
+    width:60px; height:60px; border-radius:50%;
+    background:radial-gradient(120% 120% at 50% 0%,#1d222a 0%,#14181e 70%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.09),inset 0 -2px 6px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.6),0 6px 14px -6px rgba(0,0,0,.9);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .12s var(--ease-out);
+  }
+  .key .dot{
+    width:12px; height:12px; border-radius:50%; background:#4b5563;
+    transition:background .12s var(--ease-out),box-shadow .12s var(--ease-out);
+  }
+  .key.on{transform:scale(.97)}
+  .key.on .dot{background:#e5484d; box-shadow:0 0 0 4px rgba(229,72,77,.14)}
+
+  .legend{font-size:10.5px; color:var(--txt-3); text-align:center; padding:0 0 15px; letter-spacing:.01em}
+  .hintline{width:min(92vw,400px); font-size:12px; color:var(--txt-2); line-height:1.7; margin:0}
+  .hintline b{color:#cfd6de; font-weight:500}
+  .ctl{display:flex; gap:8px}
+  .btn{
+    border:0; background:var(--surface-2); color:#cfd6de; font-size:12px;
+    padding:8px 15px; border-radius:99px; cursor:pointer; font-family:inherit;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08),0 1px 2px rgba(0,0,0,.5);
+    transition:transform .12s var(--ease-out),background .12s var(--ease-out);
+  }
+  .btn:active{transform:scale(.97)}
+  @media (hover:hover) and (pointer:fine){ .btn:hover{background:#1b2028} }
+  body.snap .botwrap,body.snap #photo,body.snap #hint,body.snap #dict,body.snap #brand,body.snap #ring,body.snap #timer{transition:none !important}
+  @media (prefers-reduced-motion:reduce){
+    .botwrap,#photo,#hint,#dict,.key,.btn{transition-duration:1ms}
+    #dict .caret{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>AIPRINTER · 角色版</h1>
+    <p>240×320 竖屏 · 角色接管全部状态</p>
+  </div>
+  <div class="tag">v0.5</div>
+</header>
+
+<div class="device">
+  <div class="screenbox"><div class="stage" id="stage" data-act="idle">
+    <canvas id="photo" width="240" height="320"></canvas>
+
+    <div class="botzone">
+      <div class="botwrap"><svg id="bot" role="img" aria-label="角色"></svg></div>
+    </div>
+
+    <div class="hud">
+      <div id="brand">AIPRINTER</div>
+      <div id="timer">00:00</div>
+      <div id="dict"></div>
+      <div id="ring"></div>
+      <div id="hint">按住说话</div>
+      <div id="prog"><i></i></div>
+    </div>
+  </div></div>
+
+  <div class="deck">
+    <div class="keywrap">
+      <div class="key" id="key"><div class="dot"></div></div>
+      <div class="lbl">ONE BUTTON</div>
+    </div>
+  </div>
+  <div class="legend">按住 = 说话 · 松开 = 画 · 轻触 = 打印 · 长按 = 不要这张</div>
+</div>
+
+<p class="hintline">
+  <b>鼠标就是手。</b>按住屏幕或按键说话，角色进入<b>听写</b>态，把你说的话逐字写出来；
+  松手它变成<b>加载</b>态，边转边等；画好了它让开，照片铺满整屏。
+</p>
+
+<div class="ctl">
+  <button class="btn" id="btnAuto">自动演示</button>
+  <button class="btn" id="btnReset">重新开始</button>
+</div>
+
+<script src="grok-ref/geometry-data.js"></script>
+<script src="grok-ref/src/math.js"></script>
+<script src="grok-ref/src/tables.js"></script>
+<script src="grok-ref/src/pose.js"></script>
+<script src="grok-ref/src/tricks.js"></script>
+<script src="grok-ref/src/fx.js"></script>
+<script src="grok-ref/src/eyes.js"></script>
+<script src="grok-ref/src/character.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var stage  = document.getElementById('stage');
+  var key    = document.getElementById('key');
+  var hintEl = document.getElementById('hint');
+  var dictEl = document.getElementById('dict');
+  var timerEl= document.getElementById('timer');
+  var progEl = document.querySelector('#prog i');
+  var cv     = document.getElementById('photo');
+  var ctx    = cv.getContext('2d');
+
+  var W = 240, H = 320;
+
+  // 舞台固定 240×320 逻辑像素，再整体缩放到容器宽度
+  function fitScreen(){
+    var box = stage.parentNode;
+    var k = box.clientWidth / 240;
+    stage.style.transform = 'scale(' + k + ')';
+  }
+  fitScreen();
+  window.addEventListener('resize', fitScreen);
+
+  var DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  /* ───────── 生成图：240×320，正好是屏幕 1:1 ───────── */
+  var photo = document.createElement('canvas');
+  photo.width = W; photo.height = H;
+  (function drawCat(){
+    var g = photo.getContext('2d');
+    g.fillStyle = '#f3f2ed'; g.fillRect(0, 0, W, H);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    function shape(fill, stroke, lw){ g.fillStyle = fill; g.fill(); if (stroke){ g.strokeStyle = stroke; g.lineWidth = lw || 7; g.stroke(); } }
+
+    g.beginPath(); g.ellipse(120, 302, 62, 7, 0, 0, 7); shape('#dedcd3', null);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 20;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 8;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+
+    g.beginPath();
+    g.moveTo(120, 200);
+    g.bezierCurveTo(160, 200, 180, 236, 180, 272);
+    g.bezierCurveTo(180, 294, 158, 303, 120, 303);
+    g.bezierCurveTo(82, 303, 60, 294, 60, 272);
+    g.bezierCurveTo(60, 236, 80, 200, 120, 200);
+    g.closePath();
+    shape('#ffffff', '#151515', 7);
+
+    g.beginPath(); g.moveTo(74, 96); g.lineTo(66, 46); g.lineTo(110, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(166, 96); g.lineTo(174, 46); g.lineTo(130, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(81, 89); g.lineTo(75, 59); g.lineTo(101, 74); g.closePath(); shape('#e9e7e0', null);
+    g.beginPath(); g.moveTo(159, 89); g.lineTo(165, 59); g.lineTo(139, 74); g.closePath(); shape('#e9e7e0', null);
+
+    g.beginPath(); g.arc(120, 140, 60, 0, 7); shape('#ffffff', '#151515', 7);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 5;
+    [[105, 95, 103, 106], [120, 90, 120, 103], [135, 95, 137, 106]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.ellipse(99, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(141, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(96, 136, 2.4, 0, 7); g.fill();
+    g.beginPath(); g.arc(138, 136, 2.4, 0, 7); g.fill();
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.moveTo(120, 156); g.lineTo(112, 165); g.lineTo(128, 165); g.closePath(); g.fill();
+    g.strokeStyle = '#151515'; g.lineWidth = 4.4;
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(111, 175, 102, 169); g.stroke();
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(129, 175, 138, 169); g.stroke();
+
+    g.lineWidth = 3.4;
+    [[96, 162, 62, 154], [96, 169, 58, 169], [98, 176, 64, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+    [[144, 162, 178, 154], [144, 169, 182, 169], [142, 176, 176, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+  })();
+
+  /* ───────── 照片层：出图 / 打印 ───────── */
+  var printP = -1;          // -1 = 不在打印
+  function paintPhoto(){
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(photo, 0, 0, W, H);
+    if (printP < 0) return;
+
+    var y = printP * H;
+    // 还没走到的地方就是白纸，只透出极淡的底
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, y, W, H - y); ctx.clip();
+    ctx.fillStyle = 'rgba(243,242,237,.95)';
+    ctx.fillRect(0, y, W, H - y);
+    ctx.restore();
+
+    // 不留扫描线，只在交界处压一道极淡的痕
+    ctx.fillStyle = 'rgba(24,20,16,.07)';
+    ctx.fillRect(0, y - .6, W, 1.2);
+  }
+  paintPhoto();
+
+  /* ───────── 角色：原仓库引擎，一行不改 ───────── */
+  var bot = new GrokCharacter(document.getElementById('bot'), {
+    mode: 'hold',            // 锁住状态，由我们的四幕来切
+    shape: 'blob',
+    color: 'black',
+    scheme: 'light',
+    loginWrap: true,
+    followPointer: true,
+    inkFlat: '#efeadd',      // 深色屏上，团子是纸白色
+    onChange: function(){}
+  });
+
+  /* ───────── 四幕状态机 ───────── */
+  var ST = 'idle';
+  var t0 = 0, pressAt = 0, pressing = false, pendingRec = null;
+  var dictN = 0, dictTimer = null, dictDone = true;
+  var auto = false, autoT = [];
+
+  var LINE = '画一只坐在窗台上的白猫，午后阳光';
+  var HOLD_MIN = 250;    // 不到这个时长算误触
+  var DISCARD  = 450;    // 出图后按住超过这个时长 = 不要这张
+
+  var HINT = {
+    idle : '按住说话',
+    rec  : '松开即开始画',
+    load : '正在画',
+    ready: '轻触打印 · 长按重来',
+    hold : '松开 = 不要这张',
+    print: '打印中',
+    done : '按住再说一张',
+    deny : '按住不放才能说话'
+  };
+
+  function setAct(a){ stage.dataset.act = a; hintEl.textContent = HINT[a] || ''; }
+  function go(s){
+    ST = s;
+    t0 = performance.now();
+    setAct(s);
+    if (s === 'idle'){ bot.setState('idle', { resetEyes: false }); }
+    if (s === 'rec' ){ bot.setState('dictating', { resetEyes: true }); }
+    if (s === 'load'){ bot.setState('curious', { resetEyes: false }); }
+    if (s === 'ready'){ bot.setState('happy', { resetEyes: false }); }
+    if (s === 'print'){ bot.setState('working', { resetEyes: false }); }
+    if (s === 'done'){ bot.setState('proud', { resetEyes: false }); }
+  }
+
+  function renderDict(){
+    var s = LINE.slice(0, dictN);
+    dictEl.innerHTML = s + (dictDone ? '' : '<span class="caret"></span>');
+  }
+
+  function startRec(){
+    dictN = 0; dictDone = false;
+    renderDict();
+    go('rec');
+    clearInterval(dictTimer);
+    dictTimer = setInterval(function(){
+      if (dictN < LINE.length){ dictN++; renderDict(); }
+      else { dictDone = true; renderDict(); clearInterval(dictTimer); }
+    }, 105);
+  }
+
+  function finishRec(){
+    clearInterval(dictTimer);
+    // 松手后把剩下的话补完：模拟识别在松手瞬间完成
+    if (dictN < LINE.length){
+      dictN = LINE.length; dictDone = true; renderDict();
+    }
+    go('load');
+    setTimeout(function(){ if (ST === 'load'){ printP = -1; paintPhoto(); go('ready'); } }, 3600);
+  }
+
+  function startPrint(){
+    printP = 0;
+    go('print');
+    var t = performance.now();
+    (function step(){
+      if (ST !== 'print') return;
+      var p = (performance.now() - t) / 5000;
+      if (p >= 1){ printP = 1; paintPhoto(); go('done'); return; }
+      printP = p; paintPhoto();
+      requestAnimationFrame(step);
+    })();
+  }
+
+  function reset(){
+    clearInterval(dictTimer);
+    clearTimeout(pendingRec);
+    pressing = false; key.classList.remove('on');
+    printP = -1; paintPhoto();
+    dictN = 0; dictDone = true; dictEl.innerHTML = '';
+    go('idle');
+  }
+
+  /* ───────── 单键手势 ───────── */
+  function down(e){
+    if (e) e.preventDefault();
+    if (pressing) return;
+    pressing = true; key.classList.add('on'); pressAt = performance.now();
+
+    if (ST === 'idle' || ST === 'done'){
+      pendingRec = setTimeout(function(){
+        if (pressing && (ST === 'idle' || ST === 'done')) startRec();
+      }, HOLD_MIN);
+      return;
+    }
+    if (ST === 'ready'){ setAct('hold'); progEl.style.width = '0%'; return; }
+  }
+
+  function move(){
+    if (!pressing) return;
+    if (ST === 'ready'){
+      var p = Math.min(1, (performance.now() - pressAt) / DISCARD);
+      progEl.style.width = (p * 100) + '%';
+    }
+  }
+
+  function up(e){
+    if (e) e.preventDefault();
+    if (!pressing) return;
+    pressing = false; key.classList.remove('on');
+    clearTimeout(pendingRec);
+    var held = performance.now() - pressAt;
+
+    if (ST === 'rec'){ finishRec(); return; }
+
+    if (ST === 'ready'){
+      progEl.style.width = '0%';
+      if (held < DISCARD) startPrint();
+      else reset();          // 长按松手 = 不要这张
+      return;
+    }
+
+    if (ST === 'idle' || ST === 'done'){
+      if (held < HOLD_MIN){
+        setAct('deny'); hintEl.textContent = HINT.deny;
+        setTimeout(function(){ if (ST === 'idle' || ST === 'done') setAct(ST); }, 900);
+      }
+      return;
+    }
+  }
+
+  stage.addEventListener('pointerdown', down);
+  key.addEventListener('pointerdown', function(e){ e.stopPropagation(); down(e); });
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+
+  /* ───────── 计时 / 循环 ───────── */
+  function loop(){
+    if (ST === 'rec'){
+      var s = Math.floor((performance.now() - t0) / 1000);
+      timerEl.textContent = '00:' + (s < 10 ? '0' : '') + s;
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  /* ───────── 自动演示 / 调试跳幕 ───────── */
+  function clearAuto(){ autoT.forEach(clearTimeout); autoT = []; }
+  document.getElementById('btnAuto').addEventListener('click', function(){
+    clearAuto(); reset(); auto = true;
+    autoT.push(setTimeout(function(){ pressing = true; key.classList.add('on'); startRec(); }, 500));
+    autoT.push(setTimeout(function(){ pressing = false; key.classList.remove('on'); finishRec(); }, 3000));
+    autoT.push(setTimeout(function(){ startPrint(); }, 7200));
+    autoT.push(setTimeout(function(){ auto = false; }, 13000));
+  });
+  document.getElementById('btnReset').addEventListener('click', function(){
+    clearAuto(); auto = false; reset();
+  });
+
+  (function(){
+    var h = (location.hash || '').replace('#','');
+    if (['rec','load','ready','print','done','hold'].indexOf(h) < 0) return;
+    document.body.classList.add('snap');
+    if (h === 'rec'){
+      dictN = 0; dictDone = false; go('rec');
+      setTimeout(function(){ dictN = Math.min(LINE.length, 12); renderDict(); }, 30);
+    } else if (h === 'load'){
+      dictN = LINE.length; dictDone = true; renderDict(); go('load');
+    } else if (h === 'ready'){
+      printP = -1; paintPhoto(); go('ready');
+    } else if (h === 'print'){
+      printP = .42; paintPhoto(); go('print');
+    } else if (h === 'done'){
+      printP = 1; paintPhoto(); go('done');
+    } else if (h === 'hold'){
+      printP = -1; paintPhoto(); go('ready'); setAct('hold');
+      progEl.style.width = '58%';
+    }
+  })();
+
+  window.__bot = bot; window.__state = function(){ return ST; };
+})();
+</script>
+</body>
+</html>

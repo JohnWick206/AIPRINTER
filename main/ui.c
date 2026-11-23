@@ -110,3 +110,10 @@ void ui_show_image(uint16_t *rgb565, int w, int h)
 
     display_unlock();
 }
+
+void ui_redraw(void)
+{
+    display_lock();
+    lv_obj_invalidate(lv_scr_act());
+    display_unlock();
+}

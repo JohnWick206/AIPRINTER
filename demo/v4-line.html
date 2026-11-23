@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIPRINTER · 一根线</title>
+<style>
+  :root{
+    --bg:#0a0c0f;
+    --surface:#111418;
+    --surface-2:#161a20;
+    --txt:#e7eaee;
+    --txt-2:#8b939e;
+    --txt-3:#5d6570;
+    --line:rgba(255,255,255,.07);
+    --ease-out:cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out:cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:32px 20px 48px;
+    background:var(--bg); color:var(--txt);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:22px;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{width:min(92vw,420px); display:flex; align-items:flex-end; justify-content:space-between}
+  h1{font-size:15px; font-weight:500; margin:0; letter-spacing:.005em}
+  header p{margin:5px 0 0; font-size:12px; color:var(--txt-2); line-height:1.5}
+  .tag{font-size:11px; color:var(--txt-3); font-variant-numeric:tabular-nums}
+
+  .device{
+    width:min(92vw,420px); padding:14px 14px 0;
+    background:linear-gradient(180deg,#15181d,#0d0f13);
+    border-radius:28px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      inset 0 0 0 .5px rgba(255,255,255,.05),
+      0 1px 2px rgba(0,0,0,.5),
+      0 40px 80px -40px rgba(0,0,0,.9);
+  }
+  .stage{
+    position:relative; aspect-ratio:240/320; border-radius:5px; overflow:hidden;
+    background:#07090c; cursor:pointer; user-select:none; touch-action:none;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.03);
+  }
+  .stage canvas{display:block; width:100%; height:100%}
+
+  .deck{display:flex; justify-content:center; padding:16px 0 14px}
+  .keywrap{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .lbl{font-size:10px; color:var(--txt-3); letter-spacing:.14em}
+  .key{
+    width:62px; height:62px; border-radius:50%;
+    background:radial-gradient(120% 120% at 50% 0%, #1d222a 0%, #14181e 70%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.09),
+      inset 0 -2px 6px rgba(0,0,0,.5),
+      0 1px 2px rgba(0,0,0,.6),
+      0 6px 14px -6px rgba(0,0,0,.9);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+  }
+  .key .dot{
+    width:13px; height:13px; border-radius:50%; background:#4b5563;
+    transition:background 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+  }
+  .key:active{transform:scale(.97)}
+  .key.on{transform:scale(.97)}
+  .key.on .dot{background:#e5484d; box-shadow:0 0 0 4px rgba(229,72,77,.14)}
+  .key.on .dot{animation:breathe 1.1s ease-in-out infinite}
+  @keyframes breathe{50%{opacity:.45}}
+  @media (hover:hover) and (pointer:fine){
+    .key:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 -2px 6px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.6),0 8px 18px -6px rgba(0,0,0,.9)}
+  }
+
+  .legend{font-size:11px; color:var(--txt-3); text-align:center; padding:0 0 16px; letter-spacing:.02em}
+
+  .hint{width:min(92vw,420px); font-size:12.5px; color:var(--txt-2); line-height:1.75; margin:0}
+  .hint b{color:#cfd6de; font-weight:500}
+
+  .chips{width:min(92vw,420px); display:grid; gap:8px; grid-template-columns:repeat(2,minmax(0,1fr))}
+  .chip{
+    border-radius:10px; padding:11px 12px; background:var(--surface);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.06);
+  }
+  .chip .n{font-size:10.5px; color:var(--txt-3); letter-spacing:.05em}
+  .chip .t{font-size:12px; margin-top:4px; color:var(--txt)}
+  .chip .s{font-size:10.5px; color:var(--txt-2); margin-top:4px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+  .ctl{display:flex; gap:8px}
+  .btn{
+    border:0; background:var(--surface-2); color:#cfd6de; font-size:12px;
+    padding:9px 16px; border-radius:99px; cursor:pointer; font-family:inherit;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.5);
+    transition:transform 120ms var(--ease-out), background 120ms var(--ease-out);
+  }
+  .btn:active{transform:scale(.97)}
+  @media (hover:hover) and (pointer:fine){ .btn:hover{background:#1b2028} }
+
+  @media (prefers-reduced-motion: reduce){
+    .key,.key .dot,.btn{transition-duration:1ms}
+    .key.on .dot{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>AIPRINTER · 一根线</h1>
+    <p>240×320 竖屏 · 同一根线贯穿四幕</p>
+  </div>
+  <div class="tag">v0.4</div>
+</header>
+
+<div class="device">
+  <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+  <div class="deck">
+    <div class="keywrap">
+      <div class="key" id="key"><div class="dot"></div></div>
+      <div class="lbl">ONE BUTTON</div>
+    </div>
+  </div>
+  <div class="legend">按住 = 说话 · 松开 = 生成 · 轻触 = 打印 · 长按 = 不要这张</div>
+</div>
+
+<p class="hint">
+  <b>鼠标就是手</b>。这一版只改运动：那根细线在待机时是刻度，录音时变成声波的轴，等待时滑到底部变成进度，
+  打印时变成热敏头扫过整幅画。缓动全部换成强 ease-out，进入 180ms、退出 140ms，不再有“慢慢淡出”的拖沓。
+</p>
+
+<div class="chips">
+  <div class="chip"><div class="n">贯穿</div><div class="t">一根线是唯一的角色</div><div class="s">spatial consistency</div></div>
+  <div class="chip"><div class="n">缓动</div><div class="t">强出缓动，不用内置</div><div class="s">cubic-bezier(.23,1,.32,1)</div></div>
+  <div class="chip"><div class="n">节奏</div><div class="t">进入 180 / 退出 140</div><div class="s">exit faster than enter</div></div>
+  <div class="chip"><div class="n">错峰</div><div class="t">波形从中心散开</div><div class="s">26ms stagger</div></div>
+</div>
+
+<div class="ctl">
+  <button class="btn" id="btnAuto">自动演示</button>
+  <button class="btn" id="btnReset">重新开始</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var W = 240, H = 320;
+  var FONT = '-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function fit(){
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingQuality = 'high';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  // ───── 缓动：全部用强曲线，内置的一律不用 ─────
+  function bezier(x1, y1, x2, y2){
+    function A(a, b){ return 1 - 3 * b + 3 * a; }
+    function B(a, b){ return 3 * b - 6 * a; }
+    function C(a){ return 3 * a; }
+    function calc(a, b, t){ return ((A(a, b) * t + B(a, b)) * t + C(a)) * t; }
+    function slope(a, b, t){ return 3 * A(a, b) * t * t + 2 * B(a, b) * t + C(a); }
+    return function(x){
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      var t = x;
+      for (var i = 0; i < 8; i++){
+        var e = calc(x1, x2, t) - x;
+        var d = slope(x1, x2, t);
+        if (Math.abs(e) < 1e-5 || Math.abs(d) < 1e-6) break;
+        t -= e / d;
+      }
+      return calc(y1, y2, Math.max(0, Math.min(1, t)));
+    };
+  }
+  var EASE_OUT = bezier(0.23, 1, 0.32, 1);
+  var EASE_IN_OUT = bezier(0.77, 0, 0.175, 1);
+
+  // ───── 时长：UI 一律 300ms 以内，退出比进入快 ─────
+  var T = {
+    press: 0.12,
+    enter: 0.18,
+    exit: 0.14,
+    line: 0.28,
+    reveal: 0.52,
+    recOut: 0.14
+  };
+
+  function rr(x, y, w, h, r){
+    r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function tx(s, x, y, o){
+    o = o || {};
+    ctx.save();
+    ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
+    ctx.font = (o.weight || 400) + ' ' + (o.size || 11) + 'px ' + FONT;
+    ctx.fillStyle = o.color || '#e7eaee';
+    ctx.textAlign = o.align || 'center';
+    ctx.textBaseline = 'middle';
+    try { ctx.letterSpacing = (o.sp || 0) + 'px'; } catch (e) {}
+    ctx.fillText(s, x, y);
+    ctx.restore();
+  }
+  function clamp(v, a, b){ return v < a ? a : v > b ? b : v; }
+  // 帧率无关的逼近，可被随时打断（比 keyframes 更接近 spring 的行为）
+  function ap(cur, target, dt, tau){
+    return cur + (target - cur) * (1 - Math.exp(-dt / tau));
+  }
+
+  // ───── 图：240×320，和屏 1:1 ─────
+  var PW = 240, PH = 320;
+  var photo = document.createElement('canvas');
+  photo.width = PW; photo.height = PH;
+  (function drawCat(){
+    var g = photo.getContext('2d');
+    g.fillStyle = '#f3f2ed'; g.fillRect(0, 0, PW, PH);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    function shape(fill, stroke, lw){ g.fillStyle = fill; g.fill(); if (stroke){ g.strokeStyle = stroke; g.lineWidth = lw || 7; g.stroke(); } }
+
+    g.beginPath(); g.ellipse(120, 302, 62, 7, 0, 0, 7); shape('#dedcd3', null);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 20;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+    g.strokeStyle = '#ffffff'; g.lineWidth = 8;
+    g.beginPath(); g.moveTo(172, 272); g.bezierCurveTo(206, 290, 220, 248, 204, 224); g.stroke();
+
+    g.beginPath();
+    g.moveTo(120, 200);
+    g.bezierCurveTo(160, 200, 180, 236, 180, 272);
+    g.bezierCurveTo(180, 294, 158, 303, 120, 303);
+    g.bezierCurveTo(82, 303, 60, 294, 60, 272);
+    g.bezierCurveTo(60, 236, 80, 200, 120, 200);
+    g.closePath();
+    shape('#ffffff', '#151515', 7);
+
+    g.beginPath(); g.moveTo(74, 96); g.lineTo(66, 46); g.lineTo(110, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(166, 96); g.lineTo(174, 46); g.lineTo(130, 72); g.closePath(); shape('#ffffff', '#151515', 7);
+    g.beginPath(); g.moveTo(81, 89); g.lineTo(75, 59); g.lineTo(101, 74); g.closePath(); shape('#e9e7e0', null);
+    g.beginPath(); g.moveTo(159, 89); g.lineTo(165, 59); g.lineTo(139, 74); g.closePath(); shape('#e9e7e0', null);
+
+    g.beginPath(); g.arc(120, 140, 60, 0, 7); shape('#ffffff', '#151515', 7);
+
+    g.strokeStyle = '#151515'; g.lineWidth = 5;
+    [[105, 95, 103, 106], [120, 90, 120, 103], [135, 95, 137, 106]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.ellipse(99, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(141, 140, 7.5, 10, 0, 0, 7); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(96, 136, 2.4, 0, 7); g.fill();
+    g.beginPath(); g.arc(138, 136, 2.4, 0, 7); g.fill();
+
+    g.fillStyle = '#151515';
+    g.beginPath(); g.moveTo(120, 156); g.lineTo(112, 165); g.lineTo(128, 165); g.closePath(); g.fill();
+    g.strokeStyle = '#151515'; g.lineWidth = 4.4;
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(111, 175, 102, 169); g.stroke();
+    g.beginPath(); g.moveTo(120, 165); g.quadraticCurveTo(129, 175, 138, 169); g.stroke();
+
+    g.lineWidth = 3.4;
+    [[96, 162, 62, 154], [96, 169, 58, 169], [98, 176, 64, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+    [[144, 162, 178, 154], [144, 169, 182, 169], [142, 176, 176, 183]].forEach(function(s){
+      g.beginPath(); g.moveTo(s[0], s[1]); g.lineTo(s[2], s[3]); g.stroke();
+    });
+  })();
+
+  function drawPhoto(){
+    ctx.drawImage(photo, 0, 0, W, H);
+  }
+
+  // ───── 那根线：全局唯一持续存在的元素 ─────
+  var L = {
+    y: 160, w: 44, a: .45,
+    ty: 160, tw: 44, ta: .45
+  };
+  function lineTarget(y, w, a){ L.ty = y; L.tw = w; L.ta = a; }
+  function lineTick(dt){
+    if (RM) { L.y = L.ty; L.w = L.tw; L.a = L.ta; return; }
+    L.y = ap(L.y, L.ty, dt, T.line * 0.42);
+    L.w = ap(L.w, L.tw, dt, T.line * 0.42);
+    L.a = ap(L.a, L.ta, dt, T.press * 0.9);
+  }
+  function drawLine(extra){
+    if (L.a < 0.01 && !extra) return;
+    ctx.save();
+    ctx.globalAlpha = L.a;
+    ctx.fillStyle = '#cfd8e4';
+    ctx.fillRect(W / 2 - L.w / 2, L.y - 0.5, L.w, 1);
+    ctx.restore();
+  }
+
+  // ───── 幕 ① 待机 / 录音 ─────
+  var BARS = 22;
+  function barTarget(i, el){
+    var ph = i * 0.66;
+    var env = 0.3 + 0.7 * Math.abs(Math.sin(i * 0.19 + 0.6));
+    var a1 = Math.abs(Math.sin(el * 6.2 + ph * 1.7));
+    var a2 = Math.abs(Math.sin(el * 2.3 + ph * 0.5));
+    return (0.16 + 0.84 * a1) * (0.5 + 0.5 * a2) * env;
+  }
+
+  function drawIdle(el){
+    lineTarget(160, 46, 0.4 + 0.12 * Math.sin(el * 1.6));
+    tx('按住说话', W / 2, 200, {size:15, weight:500, color:'#e8eef6'});
+    tx('松手后为你画一张', W / 2, 222, {size:10.5, color:'#6b7580'});
+    tx('就绪', W - 18, 18, {size:9.5, color:'#4a545f', align:'right', sp:.6});
+  }
+
+  function drawRec(el, exit){
+    lineTarget(160, 156, .22);
+    // 退出时整组一起收回（退出比进入快）
+    var k = exit == null ? 1 : 1 - EASE_OUT(clamp(exit / T.recOut, 0, 1));
+
+    // 红点
+    var blink = 0.4 + 0.6 * Math.abs(Math.sin(el * 3.4));
+    ctx.save();
+    ctx.globalAlpha = blink * k;
+    ctx.fillStyle = '#e5484d';
+    ctx.beginPath(); ctx.arc(18, 18, 3, 0, 7); ctx.fill();
+    ctx.restore();
+
+    tx('正在听', 27, 18, {size:10.5, weight:500, align:'left', alpha:k});
+    var s = Math.floor(el);
+    tx('00:' + (s < 10 ? '0' : '') + s, W - 18, 18, {size:10.5, color:'#7d8794', align:'right', alpha:k});
+
+    var span = 156, bw = 3, gap = (span - BARS * bw) / (BARS - 1);
+    var x0 = (W - span) / 2;
+    var cy = L.y;
+    for (var i = 0; i < BARS; i++){
+      // 从中心向两侧错峰 26ms，进入 180ms
+      var d = Math.abs(i - (BARS - 1) / 2);
+      var p = RM ? 1 : EASE_OUT(clamp((el - d * 0.026) / T.enter, 0, 1));
+      var amp = barTarget(i, el);
+      var hh = (2 + amp * 78) * p * k;
+      if (hh < 0.6) continue;
+      var x = x0 + i * (bw + gap);
+      ctx.fillStyle = 'rgba(150,182,232,' + (0.55 + 0.45 * amp) + ')';
+      rr(x, cy - hh / 2, bw, hh, bw / 2); ctx.fill();
+    }
+
+    tx('松手即开始生成', W / 2, 288, {size:10, color:'#6b7580', alpha:k});
+  }
+
+  // ───── 幕 ② 等待 ─────
+  var COLS = 12, ROWS = 16;
+  function drawLattice(el, alpha){
+    var sx = W / COLS, sy = H / ROWS;
+    for (var y = 0; y < ROWS; y++){
+      for (var x = 0; x < COLS; x++){
+        var d = x * 0.7 + y * 0.95;
+        var b = 0.5 + 0.5 * Math.sin(el * 1.7 - d * 0.5);
+        b = b * b;
+        ctx.fillStyle = 'rgba(126,160,214,' + (0.035 + 0.4 * b) * alpha + ')';
+        ctx.beginPath();
+        ctx.arc(sx * (x + .5), sy * (y + .5), 1 + 1.4 * b, 0, 7);
+        ctx.fill();
+      }
+    }
+  }
+
+  var LOAD_DUR = 9.4;
+  var shownNum = 0;
+
+  function loadProgress(el){
+    var k = 1.75;
+    var raw = (1 - Math.exp(-k * el)) / (1 - Math.exp(-k * LOAD_DUR));
+    var p = 0.94 * raw;
+    var tail = clamp((el - (LOAD_DUR - 0.55)) / 0.55, 0, 1);
+    p += (1 - p) * EASE_IN_OUT(tail);
+    return clamp(p, 0, 1);
+  }
+
+  function drawLoad(el){
+    var p = loadProgress(el);
+    var target = p * 100;
+    shownNum = RM ? target : ap(shownNum, target, lastDt, 0.12);
+    var n = Math.round(shownNum);
+
+    lineTarget(272, 156, .16);
+    drawLattice(el, 1);
+
+    // 进度在线上：线本身就是轨道
+    var bx = W / 2 - 78;
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,160,225,.9)';
+    ctx.fillRect(bx, L.y - 0.5, 156 * p, 1);
+    ctx.fillStyle = 'rgba(190,215,255,.9)';
+    ctx.beginPath(); ctx.arc(bx + 156 * p, L.y, 2.2, 0, 7); ctx.fill();
+    ctx.restore();
+
+    // 数字：进 180ms，不做位移
+    var pin = RM ? 1 : EASE_OUT(clamp(el / 0.24, 0, 1));
+    var ns = String(n);
+    ctx.save();
+    ctx.font = '500 54px ' + FONT;
+    var nw = ctx.measureText(ns).width;
+    ctx.font = '500 15px ' + FONT;
+    var pw2 = ctx.measureText('%').width;
+    ctx.restore();
+    var gap = 2, nx = W / 2 - (nw + gap + pw2) / 2;
+    tx(ns, nx, 158, {size:54, weight:500, color:'#eef3fa', align:'left', alpha:.3 + .7 * pin});
+    tx('%', nx + nw + gap, 142, {size:15, weight:500, color:'#6d84a8', align:'left', alpha:.3 + .7 * pin});
+
+    var st = p < 0.26 ? '正在理解你的描述' : p < 0.72 ? '正在绘制画面' : p < 0.995 ? '最后润色' : '画面已就绪';
+    tx(st, W / 2, 202, {size:10.5, color:'#67717e'});
+
+    if (holdMode === 'cancel'){
+      tx('继续按住即取消', W / 2, 240, {size:9, color:'#b9c2cd'});
+      ctx.fillStyle = 'rgba(255,255,255,.1)';
+      ctx.fillRect(W / 2 - 28, 250, 56, 2);
+      ctx.fillStyle = '#ff8b83';
+      ctx.fillRect(W / 2 - 28, 250, Math.max(1, 56 * holdP), 2);
+    } else {
+      tx('长按可取消', W / 2, 244, {size:9, color:'#4a545f'});
+    }
+  }
+
+  // ───── 幕 ③ 出图：整屏显影，不用方块揭幕 ─────
+  var REVEAL_DUR = T.reveal;
+  function drawReveal(el){
+    var p = EASE_OUT(clamp(el / REVEAL_DUR, 0, 1));
+    lineTarget(L.y, 156, .16 * (1 - p));
+    drawLattice(el, 1 - p);
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.75 * p;
+    if (!RM && p < 1) ctx.filter = 'blur(' + (10 * (1 - p)).toFixed(2) + 'px)';
+    drawPhoto();
+    ctx.filter = 'none';
+    ctx.restore();
+  }
+
+  // ───── 幕 ④ 预览 / 打印 ─────
+  function bottomScrim(h, a){
+    var g = ctx.createLinearGradient(0, H - h, 0, H);
+    g.addColorStop(0, 'rgba(4,6,9,0)');
+    g.addColorStop(1, 'rgba(4,6,9,' + a + ')');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H - h, W, h);
+  }
+
+  function drawPreview(el){
+    ctx.drawImage(photo, 0, 0);
+    bottomScrim(88, .5);
+    lineTarget(272, 0, 0);
+    var p = RM ? 1 : EASE_OUT(clamp(el / T.enter, 0, 1));
+    var y = 288 + (1 - p) * 6;
+
+    ctx.save();
+    ctx.globalAlpha = p;
+    pillBody(y, holdMode === 'discard' ? '继续按住 = 不要这张' : '轻触打印 · 长按重来');
+    ctx.restore();
+
+    if (holdMode === 'discard'){
+      var over = holdP >= 1;
+      tx('松开 = 不要这张', W / 2, y, {size:11, weight:500, color: over ? '#ff9d95' : '#ffcfca', alpha:p});
+      ctx.fillStyle = 'rgba(255,255,255,.14)';
+      ctx.fillRect(W / 2 - 40, y + 12, 80, 1.5);
+      ctx.fillStyle = '#ff8b83';
+      ctx.fillRect(W / 2 - 40, y + 12, Math.max(1, 80 * holdP), 1.5);
+    } else {
+      tx('轻触打印 · 长按重来', W / 2, y, {size:11, weight:500, color:'#d7dfe9', alpha:p});
+    }
+  }
+
+  function pillBody(y, label){
+    ctx.save();
+    ctx.font = '500 11px ' + FONT;
+    var w = ctx.measureText(label).width + 28;
+    var h = 22;
+    ctx.fillStyle = 'rgba(9,12,16,.85)';
+    rr(W / 2 - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.lineWidth = .5; ctx.stroke();
+    ctx.restore();
+  }
+
+  var PRINT_DUR = 6.4;
+  function drawPrint(el){
+    var p = clamp(el / PRINT_DUR, 0, 1);
+    var y = p * H;
+
+    // 未打到的部分：先保持原样，200ms 内退成纸上的淡影（避免闪断）
+    var ghost = 0.1 + 0.9 * (1 - (RM ? 1 : EASE_OUT(clamp(el / 0.2, 0, 1))));
+    ctx.save();
+    ctx.globalAlpha = ghost;
+    drawPhoto();
+    ctx.restore();
+
+    // 已打到：完整图像 + 热敏横纹
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, Math.max(0, y)); ctx.clip();
+    drawPhoto();
+    ctx.globalAlpha = 0.03; ctx.fillStyle = '#000';
+    for (var yy = 0; yy < y; yy += 3) ctx.fillRect(0, yy, W, 1);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    bottomScrim(54, .5);
+
+    // 热敏头：线性匀速，和真实走纸一致
+    ctx.save();
+    var hg = ctx.createLinearGradient(0, y - 12, 0, y + 1);
+    hg.addColorStop(0, 'rgba(170,200,245,0)');
+    hg.addColorStop(1, 'rgba(170,200,245,.22)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, y - 12, W, 13);
+    ctx.fillStyle = 'rgba(215,230,250,.92)';
+    ctx.fillRect(0, y - 1, W, 1);
+    ctx.restore();
+
+    tx('打印中', W / 2, 288, {size:10, color:'#8a95a2'});
+  }
+
+  function drawDone(el){
+    drawPhoto();
+    bottomScrim(88, .5);
+    var p = RM ? 1 : EASE_OUT(clamp(el / 0.22, 0, 1));
+    ctx.save();
+    ctx.globalAlpha = p;
+    pillBody(288, '打印完成');
+    ctx.restore();
+    tx('打印完成', W / 2, 288, {size:11, weight:500, color:'#a9e0c0', alpha:p});
+    tx('按住再说一张', W / 2, 308, {size:9, color:'#7a8592', alpha:p});
+    lineTarget(320, 0, 0);
+  }
+
+  // ───── 状态机 ─────
+  var ST = 'idle', t0 = performance.now(), toast = null, autoMode = false;
+  var keyEl = document.getElementById('key');
+  var pressing = false, pressT = 0, holdP = 0, holdMode = null, recDur = 0;
+  var lastDt = 1 / 60;
+
+  function go(s){ ST = s; t0 = performance.now(); }
+  function elNow(){ return (performance.now() - t0) / 1000; }
+  function setKeyOn(v){ keyEl.classList.toggle('on', v); }
+
+  var PRESS_MS = 250, DISCARD_MS = 700, CANCEL_MS = 1200;
+
+  function beginPress(){
+    if (pressing) return;
+    pressing = true;
+    pressT = performance.now();
+    holdP = 0;
+    holdMode = null;
+    if (ST === 'preview') holdMode = 'discard';
+    else if (ST === 'load') holdMode = 'cancel';
+    else if (ST === 'idle' || ST === 'done') holdMode = 'talk';
+    if (holdMode) setKeyOn(true);
+  }
+
+  function tickPress(){
+    if (!pressing) return;
+    var held = performance.now() - pressT;
+    if (holdMode === 'talk'){
+      if (held >= PRESS_MS && (ST === 'idle' || ST === 'done')){
+        autoMode = false;
+        setKeyOn(true);
+        go('rec');
+        holdMode = 'rec';
+      }
+    } else if (holdMode === 'cancel'){
+      holdP = clamp(held / CANCEL_MS, 0, 1);
+      if (held >= CANCEL_MS && ST === 'load'){
+        pressing = false; holdMode = null; holdP = 0; setKeyOn(false);
+        toast = { txt: '已取消', t: performance.now() };
+        go('idle');
+      }
+    } else if (holdMode === 'discard'){
+      holdP = clamp(held / DISCARD_MS, 0, 1);
+    }
+  }
+
+  function endPress(){
+    if (!pressing) return;
+    var held = performance.now() - pressT;
+    var mode = holdMode;
+    pressing = false; holdMode = null; holdP = 0;
+    setKeyOn(false);
+
+    if (mode === 'talk'){
+      if (held < PRESS_MS) toast = { txt: '按住不放才能说话', t: performance.now() };
+      return;
+    }
+    if (mode === 'rec'){
+      recDur = elNow();
+      if (recDur < 0.5){
+        toast = { txt: '太短了，按住多说一会儿', t: performance.now() };
+        go('idle');
+      } else {
+        go('recOut');
+      }
+      return;
+    }
+    if (mode === 'discard'){
+      if (held >= DISCARD_MS){
+        toast = { txt: '这张不要了', t: performance.now() };
+        go('idle');
+      } else {
+        startPrint();
+      }
+    }
+  }
+
+  function startPrint(){
+    if (ST !== 'preview') return;
+    go('print');
+  }
+
+  function drawToast(){
+    if (!toast) return;
+    var age = (performance.now() - toast.t) / 1000;
+    if (age > 1.7){ toast = null; return; }
+    var inP = RM ? 1 : EASE_OUT(clamp(age / T.enter, 0, 1));
+    var outP = age > 1.4 ? clamp((age - 1.4) / T.exit, 0, 1) : 0;
+    var a = (1 - outP) * inP;
+    var y = 262 + (1 - inP) * 4;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = '11px ' + FONT;
+    var w = Math.min(W - 32, ctx.measureText(toast.txt).width + 26);
+    ctx.fillStyle = 'rgba(18,22,28,.95)';
+    rr(W / 2 - w / 2, y - 12, w, 24, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,120,110,.28)'; ctx.lineWidth = .5; ctx.stroke();
+    ctx.restore();
+    tx(toast.txt, W / 2, y, {size:11, color:'#ffb4ae', alpha:a});
+  }
+
+  function frame(now){
+    var dt = Math.min(0.05, (now - (frame._last || now)) / 1000);
+    frame._last = now;
+    lastDt = dt || 1 / 60;
+
+    tickPress();
+    var el = elNow();
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#07090c';
+    ctx.fillRect(0, 0, W, H);
+
+    if (ST === 'idle') drawIdle(el);
+    else if (ST === 'rec') drawRec(el);
+    else if (ST === 'recOut'){
+      if (el >= T.recOut){ shownNum = 0; go('load'); }
+      drawRec(recDur + el, el);
+    }
+    else if (ST === 'load'){ if (el >= LOAD_DUR){ go('reveal'); } drawLoad(el); }
+    else if (ST === 'reveal'){ if (el >= REVEAL_DUR){ go('preview'); } drawReveal(el); }
+    else if (ST === 'preview') drawPreview(el);
+    else if (ST === 'print'){ if (el >= PRINT_DUR){ go('done'); } drawPrint(el); }
+    else if (ST === 'done'){
+      drawDone(el);
+      if (autoMode && el > 3.0){ autoMode = false; go('idle'); }
+    }
+
+    lineTick(dt);
+    if (ST !== 'print') drawLine();
+
+    drawToast();
+    requestAnimationFrame(frame);
+  }
+
+  // ───── 输入 ─────
+  var stage = document.getElementById('stage');
+  function onDown(e){
+    if (e.button) return;
+    e.preventDefault();
+    beginPress();
+  }
+  stage.addEventListener('pointerdown', onDown);
+  keyEl.addEventListener('pointerdown', function(e){ e.stopPropagation(); onDown(e); });
+  window.addEventListener('pointerup', function(){ endPress(); });
+  window.addEventListener('pointercancel', function(){ endPress(); });
+
+  document.getElementById('btnReset').addEventListener('click', function(){
+    pressing = false; holdMode = null; holdP = 0;
+    autoMode = false; setKeyOn(false); shownNum = 0; toast = null; go('idle');
+    L.y = 160; L.w = 46; L.a = .45;
+  });
+
+  var autoTimer = null;
+  document.getElementById('btnAuto').addEventListener('click', function(){
+    autoMode = true; setKeyOn(false); shownNum = 0; go('idle');
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function(){
+      if (!autoMode) return;
+      beginPress();
+      autoTimer = setTimeout(function(){ if (pressing) endPress(); }, 2600);
+    }, 600);
+  });
+
+  // 调试：地址栏 #rec / #load / #reveal / #preview / #print / #done
+  (function(){
+    var h = (location.hash || '').replace('#', '');
+    if (['rec', 'load', 'reveal', 'preview', 'print', 'done'].indexOf(h) < 0) return;
+    var skip = { rec: 1.4, load: 4.6, reveal: 0.08, preview: 1, print: 3.2, done: 1 }[h] || 0;
+    go(h);
+    t0 = performance.now() - skip * 1000;
+    if (h === 'rec') setKeyOn(true);
+    if (h === 'load') L.y = 272;
+    if (h === 'preview') L.a = 0;
+  })();
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

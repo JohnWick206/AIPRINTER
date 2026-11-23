@@ -94,6 +94,7 @@ static void json_escape(const char *src, char *dst, size_t cap)
 // ───────── 主流程 ─────────
 static void show_error(const char *msg)
 {
+    anim_stop();                 // 先把屏幕从点阵动画手里收回来
     ESP_LOGE(TAG, "!! %s", msg);
     ui_set_status("出错", -1);
     ui_set_hint(msg);
@@ -148,8 +149,8 @@ static void run_once(const char *prompt)
     s_last_try_us = t_all;
 
     // 1) 请求生成
-    ui_set_status("生成中", 20);
-    ui_set_hint(prompt);
+    // 整条链路（生成 → 下载 → 解码）都显示点阵光场，比进度条更像「正在生成」
+    anim_start();
 
     int rlen = 0, status = 0;
     char *resp = http_post_json(API_URL, body, &rlen, &status);
@@ -158,6 +159,7 @@ static void run_once(const char *prompt)
             // 服务端限流：账号级 IPM=2，每分钟只能出 2 张，等满 60 s 才恢复
             ESP_LOGE(TAG, "!! 429 rate limited (IPM=2: max 2 images per minute)");
             ESP_LOGE(TAG, "   server quota resets after ~60 s. then type: retry");
+            anim_stop();
             ui_set_status("限流", -1);
             ui_set_hint("等一分钟再输入 retry");
         } else if (status == 401 || status == 403) {
@@ -181,21 +183,20 @@ static void run_once(const char *prompt)
     if (!url) { show_error("no url in response"); return; }
     ESP_LOGI(TAG, "url %d bytes", (int)strlen(url));
 
-    // 2) 下载
-    ui_set_status("下载中", 55);
+    // 2) 下载（动画继续跑，不打断）
     size_t plen = 0;
     uint8_t *png = http_get_all(url, &plen);
     free(url);
     if (!png) { show_error("download failed"); return; }
 
     // 3) 解码 + 缩放
-    ui_set_status("解码中", 82);
     int dw = 0, dh = 0;
     uint16_t *photo = image_decode_fit(png, plen, LCD_W, LCD_H, &dw, &dh);
     free(png);
     if (!photo) { show_error("decode failed"); return; }
 
     // 4) 上屏
+    anim_stop();            // 交还屏幕，LVGL 全量重画
     ui_show_image(photo, dw, dh);
     free(s_photo);          // 上一张此时已经没人引用了
     s_photo = photo;
@@ -273,8 +274,50 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
 
+#if SCREEN_TEST
+    // 只验证屏幕硬件：不初始化 LVGL、不连 WiFi、不碰动画
+    display_init();
+    ESP_LOGI(TAG, "=== SCREEN TEST MODE (no LVGL, no wifi) ===");
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#elif ANIM_DEMO
+#if GROKBOT_DEMO
+    // 播 GrokBot 表情动画：53 个状态自动轮播，不连 WiFi
+    display_init();
+    grokbot_start();
+    ESP_LOGI(TAG, "=== GROKBOT DEMO: %d states, wifi disabled ===", grokbot_state_count());
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+#elif DEMO_REFINE
+    // 演示 Refine Frame 的等待态：纸面 + 扫光带 + 状态胶囊，五阶段循环
     display_init();
     ui_init();
+    rf_init();
+    ESP_LOGI(TAG, "=== REFINE FRAME DEMO (wifi disabled) ===");
+    for (;;) {
+        rf_set_status(RF_QUEUED);     ESP_LOGI(TAG, "status: queued");     vTaskDelay(pdMS_TO_TICKS(2500));
+        rf_set_status(RF_GENERATING); ESP_LOGI(TAG, "status: generating"); vTaskDelay(pdMS_TO_TICKS(3500));
+        rf_set_status(RF_REFINING);   ESP_LOGI(TAG, "status: refining");   vTaskDelay(pdMS_TO_TICKS(3500));
+        rf_set_status(RF_COMPLETE);   ESP_LOGI(TAG, "status: complete");   vTaskDelay(pdMS_TO_TICKS(3000));
+        rf_set_status(RF_ERROR);      ESP_LOGI(TAG, "status: error");      vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+#else
+    // 独立演示：上电直接进点阵动画，不连 WiFi。
+    display_init();
+    ui_init();
+    anim_init();
+    ESP_LOGI(TAG, "=== ANIM DEMO: dot field only, wifi disabled ===");
+    anim_start();
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#endif
+#else
+    display_init();
+    ui_init();
+    anim_init();
     ui_set_status("启动", -1);
     ESP_LOGI(TAG, "=== serial prompt -> image -> LCD (LVGL) ===");
     ESP_LOGI(TAG, "image %s  lcd %dx%d", IMG_SIZE, LCD_W, LCD_H);
@@ -287,4 +330,5 @@ void app_main(void)
     ESP_LOGI(TAG, "example prompt: %s", DEFAULT_PROMPT);
 
     xTaskCreate(input_task, "input", 12288, NULL, 5, NULL);
+#endif
 }
